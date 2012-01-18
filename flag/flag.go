@@ -835,11 +835,11 @@ func (f *FlagSet) parseGnuFlagArg(name string) (finished bool, err error) {
 	return
 }
 
-// ParseGnu parses the flags in the GNU style:
-// - Multiple-letter flags must be preceded with "--".
-// - Single-letter flags can be concatenated, for example: -lr
-// - If allowIntersperse is set, arguments and flags can be interspersed; that
-//	is, flags can follow positional arguments.
+// ParseGnu parses the flags in the GNU style.
+// Multiple-letter flags must be preceded with "--".
+// Single-letter flags can be concatenated.
+// If allowIntersperse is set, arguments and flags can be interspersed; that
+// is, flags can follow positional arguments.
 func (f *FlagSet) ParseGnu(allowIntersperse bool, arguments []string) error {
 	f.parsed = true
 	f.procArgs = arguments

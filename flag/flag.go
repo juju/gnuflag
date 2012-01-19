@@ -3,70 +3,40 @@
 // license that can be found in the LICENSE file.
 
 /*
-	Package flag implements command-line flag parsing.
-
-	Usage:
-
-	Define flags using flag.String(), Bool(), Int(), etc. Example:
-		import "flag"
-		var ip *int = flag.Int("flagname", 1234, "help message for flagname")
-	If you like, you can bind the flag to a variable using the Var() functions.
-		var flagvar int
-		func init() {
-			flag.IntVar(&flagvar, "flagname", 1234, "help message for flagname")
-		}
-	Or you can create custom flags that satisfy the Value interface (with
-	pointer receivers) and couple them to flag parsing by
-		flag.Var(&flagVal, "name", "help message for flagname")
-	For such flags, the default value is just the initial value of the variable.
-
-	After all flags are defined, call
-		flag.Parse()
-	to parse the command line into the defined flags.
-
-	Flags may then be used directly. If you're using the flags themselves,
-	they are all pointers; if you bind to variables, they're values.
-		fmt.Println("ip has value ", *ip);
-		fmt.Println("flagvar has value ", flagvar);
-
-	After parsing, the arguments after the flag are available as the
-	slice flag.Args() or individually as flag.Arg(i).
-	The arguments are indexed from 0 up to flag.NArg().
+	Package flag implements command-line flag parsing in the GNU style.
+	It is almost exactly the same as the standard flag package,
+	the only difference being the extra argument to Parse.
 
 	Command line flag syntax:
-		-flag
-		-flag=x
-		-flag x  // non-boolean flags only
-	One or two minus signs may be used; they are equivalent.
-	The last form is not permitted for boolean flags because the
+		-f		// single letter flag
+		-fg		// two single letter flags together
+		--flag	// multiple letter flag
+		--flag x  // non-boolean flags only
+		-f x		// non-boolean flags only
+		-fx		// if f is a non-boolean flag, x is its argument.
+
+	The last three forms are not permitted for boolean flags because the
 	meaning of the command
-		cmd -x *
-	will change if there is a file called 0, false, etc.  You must
-	use the -flag=false form to turn off a boolean flag.
+		cmd -f *
+	will change if there is a file called 0, false, etc.  There is currently
+	no way to turn off a boolean flag.
 
-	Flag parsing stops just before the first non-flag argument
-	("-" is a non-flag argument) or after the terminator "--".
-
-	Integer flags accept 1234, 0664, 0x1234 and may be negative.
-	Boolean flags may be 1, 0, t, f, true, false, TRUE, FALSE, True, False.
-
-	The default set of command-line flags is controlled by
-	top-level functions.  The FlagSet type allows one to define
-	independent sets of flags, such as to implement subcommands
-	in a command-line interface. The methods of FlagSet are
-	analogous to the top-level functions for the command-line
-	flag set.
+	Flag parsing stops after the terminator "--", or just before the first
+	non-flag argument ("-" is a non-flag argument) if the interspersed
+	argument to Parse is false. 
 */
 package flag
 
 import (
-	"unicode/utf8"
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strconv"
 	"time"
+	"unicode/utf8"
 )
 
 // ErrHelp is the error returned if the flag -help is invoked but no such flag is defined.
@@ -222,16 +192,16 @@ type FlagSet struct {
 	// a custom error handler.
 	Usage func()
 
-	name          string
-	parsed        bool
-	actual        map[string]*Flag
-	formal        map[string]*Flag
-	args          []string // arguments after flags
-	procArgs	[]string	// arguments being processed (gnu only)
-	procFlag	string	// flag being processed (gnu only)
-	allowIntersperse bool	// (gnu only)
-	exitOnError   bool     // does the program exit if there's an error?
-	errorHandling ErrorHandling
+	name             string
+	parsed           bool
+	actual           map[string]*Flag
+	formal           map[string]*Flag
+	args             []string // arguments after flags
+	procArgs         []string // arguments being processed (gnu only)
+	procFlag         string   // flag being processed (gnu only)
+	allowIntersperse bool     // (gnu only)
+	exitOnError      bool     // does the program exit if there's an error?
+	errorHandling    ErrorHandling
 }
 
 // A Flag represents the state of a flag.
@@ -319,16 +289,73 @@ func Set(name, value string) error {
 	return commandLine.Set(name, value)
 }
 
+type flagsByLength []*Flag
+
+func (f flagsByLength) Less(i, j int) bool {
+	return len(f[i].Name) < len(f[j].Name)
+}
+func (f flagsByLength) Swap(i, j int) {
+	f[i], f[j] = f[j], f[i]
+}
+func (f flagsByLength) Len() int {
+	return len(f)
+}
+
+type flagsByName [][]*Flag
+
+func (f flagsByName) Less(i, j int) bool {
+	return f[i][0].Name < f[j][0].Name
+}
+func (f flagsByName) Swap(i, j int) {
+	f[i], f[j] = f[j], f[i]
+}
+func (f flagsByName) Len() int {
+	return len(f)
+}
+
 // PrintDefaults prints to standard error the default values of all defined flags in the set.
+// If there is more than one name for a given flag, the usage information and
+// default value from the shortest will be printed.
 func (f *FlagSet) PrintDefaults() {
+	f.printDefaults(os.Stderr)
+}
+
+// printDefaults is used for testing.
+func (f *FlagSet) printDefaults(out io.Writer) {
+	// group together all flags for a given value
+	flags := make(map[interface{}]flagsByLength)
 	f.VisitAll(func(f *Flag) {
-		format := "  -%s=%s: %s\n"
-		if _, ok := f.Value.(*stringValue); ok {
-			// put quotes on the value
-			format = "  -%s=%q: %s\n"
-		}
-		fmt.Fprintf(os.Stderr, format, f.Name, f.DefValue, f.Usage)
+		flags[f.Value] = append(flags[f.Value], f)
 	})
+
+	// sort the output flags by shortest name for each group.
+	var byName flagsByName
+	for _, f := range flags {
+		sort.Sort(f)
+		byName = append(byName, f)
+	}
+	sort.Sort(byName)
+
+	var line bytes.Buffer
+	for _, fs := range byName {
+		line.Reset()
+		for i, f := range fs {
+			if i > 0 {
+				line.WriteString(", ")
+			}
+			if len(f.Name) > 1 {
+				line.WriteRune('-')
+			}
+			line.WriteRune('-')
+			line.WriteString(f.Name)
+		}
+		format := "%s  (= %s)\n    %s\n"
+		if _, ok := fs[0].Value.(*stringValue); ok {
+			// put quotes on the value
+			format = "%s (= %q)\n    %s\n"
+		}
+		fmt.Fprintf(out, format, line.Bytes(), fs[0].DefValue, fs[0].Usage)
+	}
 }
 
 // PrintDefaults prints to standard error the default values of all defined command-line flags.
@@ -867,7 +894,7 @@ func (f *FlagSet) ParseGnu(allowIntersperse bool, arguments []string) error {
 		}
 	}
 	return nil
-}	
+}
 
 // Parsed reports whether f.Parse has been called.
 func (f *FlagSet) Parsed() bool {

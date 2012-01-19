@@ -398,3 +398,35 @@ func TestHelp(t *testing.T) {
 		t.Fatal("help was called; should not have been for defined help flag")
 	}
 }
+func TestPrintDefaults(t *testing.T) {
+	f := NewFlagSet("print test", ContinueOnError)
+	var b bool
+	var c int
+	var d string
+	var e float64
+	f.IntVar(&c, "claptrap", 99, "usage not shown")
+	f.IntVar(&c, "c", 99, "c usage")
+
+	f.BoolVar(&b, "bal", false, "usage not shown")
+	f.BoolVar(&b, "b", false, "b usage")
+	f.BoolVar(&b, "balalaika", false, "usage not shown")
+
+	f.StringVar(&d, "d", "d default", "d usage")
+
+	f.Float64Var(&e, "elephant", 3.14, "elephant usage")
+
+	got := f.DefaultsString()
+	expect :=
+`-b, --bal, --balalaika  (= false)
+    b usage
+-c, --claptrap  (= 99)
+    c usage
+-d (= "d default")
+    d usage
+--elephant  (= 3.14)
+    elephant usage
+`
+	if got != expect {
+		t.Error("expect %q got %q", expect, got)
+	}
+}

@@ -405,7 +405,7 @@ func TestPrintDefaults(t *testing.T) {
 	var c int
 	var d string
 	var e float64
-	f.IntVar(&c, "claptrap", 99, "usage not shown")
+	f.IntVar(&c, "trapclap", 99, "usage not shown")
 	f.IntVar(&c, "c", 99, "c usage")
 
 	f.BoolVar(&b, "bal", false, "usage not shown")
@@ -420,7 +420,7 @@ func TestPrintDefaults(t *testing.T) {
 	expect :=
 `-b, --bal, --balalaika  (= false)
     b usage
--c, --claptrap  (= 99)
+-c, --trapclap  (= 99)
     c usage
 -d (= "d default")
     d usage

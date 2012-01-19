@@ -398,6 +398,7 @@ func TestHelp(t *testing.T) {
 		t.Fatal("help was called; should not have been for defined help flag")
 	}
 }
+
 func TestPrintDefaults(t *testing.T) {
 	f := NewFlagSet("print test", ContinueOnError)
 	var b bool

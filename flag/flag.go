@@ -192,6 +192,9 @@ type FlagSet struct {
 	// a custom error handler.
 	Usage func()
 
+	// Errors will be printed to Stderr, which is set to os.Stderr by default.
+	Stderr io.Writer
+
 	name             string
 	parsed           bool
 	actual           map[string]*Flag
@@ -313,15 +316,10 @@ func (f flagsByName) Len() int {
 	return len(f)
 }
 
-// PrintDefaults prints to standard error the default values of all defined flags in the set.
+// PrintDefaults prints to f.Stderr the default values of all defined flags in the set.
 // If there is more than one name for a given flag, the usage information and
 // default value from the shortest will be printed.
 func (f *FlagSet) PrintDefaults() {
-	f.printDefaults(os.Stderr)
-}
-
-// printDefaults is used for testing.
-func (f *FlagSet) printDefaults(out io.Writer) {
 	// group together all flags for a given value
 	flags := make(map[interface{}]flagsByLength)
 	f.VisitAll(func(f *Flag) {
@@ -354,7 +352,7 @@ func (f *FlagSet) printDefaults(out io.Writer) {
 			// put quotes on the value
 			format = "%s (= %q)\n    %s\n"
 		}
-		fmt.Fprintf(out, format, line.Bytes(), fs[0].DefValue, fs[0].Usage)
+		fmt.Fprintf(f.Stderr, format, line.Bytes(), fs[0].DefValue, fs[0].Usage)
 	}
 }
 
@@ -365,7 +363,7 @@ func PrintDefaults() {
 
 // defaultUsage is the default function to print a usage message.
 func defaultUsage(f *FlagSet) {
-	fmt.Fprintf(os.Stderr, "Usage of %s:\n", f.name)
+	fmt.Fprintf(f.Stderr, "Usage of %s:\n", f.name)
 	f.PrintDefaults()
 }
 
@@ -632,7 +630,7 @@ func (f *FlagSet) Var(value Value, name string, usage string) {
 	flag := &Flag{name, usage, value, value.String()}
 	_, alreadythere := f.formal[name]
 	if alreadythere {
-		fmt.Fprintf(os.Stderr, "%s flag redefined: %s\n", f.name, name)
+		fmt.Fprintf(f.Stderr, "%s flag redefined: %s\n", f.name, name)
 		panic("flag redefinition") // Happens only if flags are declared with identical names
 	}
 	if f.formal == nil {
@@ -655,7 +653,7 @@ func Var(value Value, name string, usage string) {
 // returns the error.
 func (f *FlagSet) failf(format string, a ...interface{}) error {
 	err := fmt.Errorf(format, a...)
-	fmt.Fprintln(os.Stderr, err)
+	fmt.Fprintln(f.Stderr, err)
 	f.usage()
 	return err
 }
@@ -670,105 +668,6 @@ func (f *FlagSet) usage() {
 	} else {
 		f.Usage()
 	}
-}
-
-// parseOne parses one flag. It returns whether a flag was seen.
-func (f *FlagSet) parseOne() (bool, error) {
-	if len(f.args) == 0 {
-		return false, nil
-	}
-	s := f.args[0]
-	if len(s) == 0 || s[0] != '-' || len(s) == 1 {
-		return false, nil
-	}
-	num_minuses := 1
-	if s[1] == '-' {
-		num_minuses++
-		if len(s) == 2 { // "--" terminates the flags
-			f.args = f.args[1:]
-			return false, nil
-		}
-	}
-	name := s[num_minuses:]
-	if len(name) == 0 || name[0] == '-' || name[0] == '=' {
-		return false, f.failf("bad flag syntax: %s", s)
-	}
-
-	// it's a flag. does it have an argument?
-	f.args = f.args[1:]
-	has_value := false
-	value := ""
-	for i := 1; i < len(name); i++ { // equals cannot be first
-		if name[i] == '=' {
-			value = name[i+1:]
-			has_value = true
-			name = name[0:i]
-			break
-		}
-	}
-	m := f.formal
-	flag, alreadythere := m[name] // BUG
-	if !alreadythere {
-		if name == "help" || name == "h" { // special case for nice help message.
-			f.usage()
-			return false, ErrHelp
-		}
-		return false, f.failf("flag provided but not defined: -%s", name)
-	}
-	if fv, ok := flag.Value.(*boolValue); ok { // special case: doesn't need an arg
-		if has_value {
-			if err := fv.Set(value); err != nil {
-				f.failf("invalid boolean value %q for  -%s: %v", value, name, err)
-			}
-		} else {
-			fv.Set("true")
-		}
-	} else {
-		// It must have a value, which might be the next argument.
-		if !has_value && len(f.args) > 0 {
-			// value is the next arg
-			has_value = true
-			value, f.args = f.args[0], f.args[1:]
-		}
-		if !has_value {
-			return false, f.failf("flag needs an argument: -%s", name)
-		}
-		if err := flag.Value.Set(value); err != nil {
-			return false, f.failf("invalid value %q for flag -%s: %v", value, name, err)
-		}
-	}
-	if f.actual == nil {
-		f.actual = make(map[string]*Flag)
-	}
-	f.actual[name] = flag
-	return true, nil
-}
-
-// Parse parses flag definitions from the argument list, which should not
-// include the command name.  Must be called after all flags in the FlagSet
-// are defined and before flags are accessed by the program.
-// The return value will be ErrHelp if -help was set but not defined.
-func (f *FlagSet) Parse(arguments []string) error {
-	f.parsed = true
-	f.args = arguments
-	for {
-		seen, err := f.parseOne()
-		if seen {
-			continue
-		}
-		if err == nil {
-			break
-		}
-		switch f.errorHandling {
-		case ContinueOnError:
-			return err
-		case ExitOnError:
-			os.Exit(2)
-		case PanicOnError:
-			panic(err)
-		}
-	}
-	return nil
 }
 
 func (f *FlagSet) parseOneGnu() (flagName string, finished bool, err error) {
@@ -821,6 +720,13 @@ func (f *FlagSet) parseOneGnu() (flagName string, finished bool, err error) {
 	return
 }
 
+func flagWithMinus(name string) string {
+	if len(name) > 1 {
+		return "--" + name
+	}
+	return "-" + name
+}
+
 func (f *FlagSet) parseGnuFlagArg(name string) (finished bool, err error) {
 	m := f.formal
 	flag, alreadythere := m[name] // BUG
@@ -829,7 +735,8 @@ func (f *FlagSet) parseGnuFlagArg(name string) (finished bool, err error) {
 			f.usage()
 			return false, ErrHelp
 		}
-		return false, f.failf("flag provided but not defined: -%s", name)
+		// TODO print --xxx when flag is more than one rune.
+		return false, f.failf("flag provided but not defined: %s", flagWithMinus(name))
 	}
 	if fv, ok := flag.Value.(*boolValue); ok { // special case: doesn't need an arg
 		fv.Set("true")
@@ -849,10 +756,10 @@ func (f *FlagSet) parseGnuFlagArg(name string) (finished bool, err error) {
 			value, f.procArgs = f.procArgs[0], f.procArgs[1:]
 		}
 		if !hasValue {
-			return false, f.failf("flag needs an argument: -%s", name)
+			return false, f.failf("flag needs an argument: %s", flagWithMinus(name))
 		}
 		if err := flag.Value.Set(value); err != nil {
-			return false, f.failf("invalid value %q for flag -%s: %v", value, name, err)
+			return false, f.failf("invalid value %q for flag %s: %v", value, flagWithMinus(name), err)
 		}
 	}
 	if f.actual == nil {
@@ -862,14 +769,17 @@ func (f *FlagSet) parseGnuFlagArg(name string) (finished bool, err error) {
 	return
 }
 
-// ParseGnu parses the flags in the GNU style.
-// Multiple-letter flags must be preceded with "--".
-// Single-letter flags can be concatenated.
-// If allowIntersperse is set, arguments and flags can be interspersed; that
-// is, flags can follow positional arguments.
-func (f *FlagSet) ParseGnu(allowIntersperse bool, arguments []string) error {
+// Parse parses flag definitions from the argument list, which should not
+// include the command name.  Must be called after all flags in the FlagSet
+// are defined and before flags are accessed by the program.
+// The return value will be ErrHelp if -help was set but not defined.
+// If allowIntersperse is set, arguments and flags can be interspersed, that
+// is flags can follow positional arguments.
+func (f *FlagSet) Parse(allowIntersperse bool, arguments []string) error {
 	f.parsed = true
 	f.procArgs = arguments
+	f.procFlag = ""
+	f.args = nil
 	f.allowIntersperse = allowIntersperse
 	for {
 		name, finished, err := f.parseOneGnu()
@@ -878,19 +788,21 @@ func (f *FlagSet) ParseGnu(allowIntersperse bool, arguments []string) error {
 				finished, err = f.parseGnuFlagArg(name)
 			}
 		}
+		if err != nil {
+			switch f.errorHandling {
+			case ContinueOnError:
+				return err
+			case ExitOnError:
+				os.Exit(2)
+			case PanicOnError:
+				panic(err)
+			}
+		}
 		if !finished {
 			continue
 		}
 		if err == nil {
 			break
-		}
-		switch f.errorHandling {
-		case ContinueOnError:
-			return err
-		case ExitOnError:
-			os.Exit(2)
-		case PanicOnError:
-			panic(err)
 		}
 	}
 	return nil
@@ -903,9 +815,11 @@ func (f *FlagSet) Parsed() bool {
 
 // Parse parses the command-line flags from os.Args[1:].  Must be called
 // after all flags are defined and before flags are accessed by the program.
-func Parse() {
+// If allowIntersperse is set, arguments and flags can be interspersed, that
+// is flags can follow positional arguments.
+func Parse(allowIntersperse bool) {
 	// Ignore errors; commandLine is set for ExitOnError.
-	commandLine.Parse(os.Args[1:])
+	commandLine.Parse(allowIntersperse, os.Args[1:])
 }
 
 // Parsed returns true if the command-line flags have been parsed.
@@ -922,6 +836,7 @@ func NewFlagSet(name string, errorHandling ErrorHandling) *FlagSet {
 	f := &FlagSet{
 		name:          name,
 		errorHandling: errorHandling,
+		Stderr:        os.Stderr,
 	}
 	return f
 }

@@ -5,9 +5,11 @@
 package flag_test
 
 import (
-	. "launchpad.net/~rogpeppe/gnuflag/flag"
+	"bytes"
 	"fmt"
+	. "launchpad.net/~rogpeppe/juju/gnuflag/flag"
 	"os"
+	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -94,7 +96,9 @@ func TestEverything(t *testing.T) {
 func TestUsage(t *testing.T) {
 	called := false
 	ResetForTesting(func() { called = true })
-	if CommandLine().Parse([]string{"-x"}) == nil {
+	f := CommandLine()
+	f.Stderr = nullWriter{}
+	if f.Parse(true, []string{"-x"}) == nil {
 		t.Error("parse did not fail for unknown flag")
 	}
 	if !called {
@@ -102,119 +106,202 @@ func TestUsage(t *testing.T) {
 	}
 }
 
-var gnuTests = []struct {
+var parseTests = []struct {
 	intersperse bool
-	args []string
-	vals map[string]interface{}
-	remaining []string
-} {{
-	true,
-	[]string{
-		"-a",
-		"-",
-		"-bc",
-		"2",
-		"-de1s",
-		"-f2s",
-		"-g", "3s",
-		"--h",
-		"--long",
-		"--long2", "-4s",
-		"3",
-		"4",
-		"--", "-5",
+	args        []string
+	vals        map[string]interface{}
+	remaining   []string
+	error       string
+}{
+	{
+		true,
+		[]string{
+			"--bool2",
+			"--int", "22",
+			"--int64", "0x23",
+			"--uint", "24",
+			"--uint64", "25",
+			"--string", "hello",
+			"--float64", "2718e28",
+			"--duration", "2m",
+			"one - extra - argument",
+		},
+		map[string]interface{}{
+			"bool":     false,
+			"bool2":    true,
+			"int":      22,
+			"int64":    int64(0x23),
+			"uint":     uint(24),
+			"uint64":   uint64(25),
+			"string":   "hello",
+			"float64":  2718e28,
+			"duration": 2 * 60 * time.Second,
+		},
+		[]string{
+			"one - extra - argument",
+		},
+		"",
 	},
-	map[string]interface{} {
-		"a": true,
-		"b": true,
-		"c": true,
-		"d": true,
-		"e": "1s",
-		"f": "2s",
-		"g": "3s",
-		"h": true,
-		"long": true,
-		"long2": "-4s",
+	{
+		true,
+		[]string{
+			"-a",
+			"-",
+			"-bc",
+			"2",
+			"-de1s",
+			"-f2s",
+			"-g", "3s",
+			"--h",
+			"--long",
+			"--long2", "-4s",
+			"3",
+			"4",
+			"--", "-5",
+		},
+		map[string]interface{}{
+			"a":     true,
+			"b":     true,
+			"c":     true,
+			"d":     true,
+			"e":     "1s",
+			"f":     "2s",
+			"g":     "3s",
+			"h":     true,
+			"long":  true,
+			"long2": "-4s",
+			"z":     "default",
+			"www":   99,
+		},
+		[]string{
+			"-",
+			"2",
+			"3",
+			"4",
+			"-5",
+		},
+		"",
+	}, {
+		true,
+		[]string{
+			"-a",
+			"--",
+			"-b",
+		},
+		map[string]interface{}{
+			"a": true,
+			"b": false,
+		},
+		[]string{
+			"-b",
+		},
+		"",
+	}, {
+		false,
+		[]string{
+			"-a",
+			"foo",
+			"-b",
+		},
+		map[string]interface{}{
+			"a": true,
+			"b": false,
+		},
+		[]string{
+			"foo",
+			"-b",
+		},
+		"",
 	},
-	[]string{
-		"-",
-		"2",
-		"3",
-		"4",
-		"-5",
+	{
+		false,
+		[]string{
+			"-a",
+			"--",
+			"foo",
+			"-b",
+		},
+		map[string]interface{}{
+			"a": true,
+			"b": false,
+		},
+		[]string{
+			"foo",
+			"-b",
+		},
+		"",
 	},
-}, {
-	true,
-	[]string{
-		"-a",
-		"--",
-		"-b",
+	{
+		true,
+		[]string{
+			"-a",
+			"-b",
+		},
+		map[string]interface{}{
+			"a": true,
+		},
+		nil,
+		"flag provided but not defined: -b",
 	},
-	map[string]interface{} {
-		"a": true,
-		"b": false,
+	{
+		true,
+		[]string{
+			"-a",
+		},
+		map[string]interface{}{
+			"a": "default",
+		},
+		nil,
+		"flag needs an argument: -a",
 	},
-	[]string{
-		"-b",
+	{
+		true,
+		[]string{
+			"-a", "b",
+		},
+		map[string]interface{}{
+			"a": 0,
+		},
+		nil,
+		`invalid value "b" for flag -a: strconv.ParseInt: parsing "b": invalid syntax`,
 	},
-}, {
-	false,
-	[]string{
-		"-a",
-		"foo",
-		"-b",
-	},
-	map[string]interface{} {
-		"a": true,
-		"b": false,
-	},
-	[]string{
-		"foo",
-		"-b",
-	},
-},
-{
-	false,
-	[]string{
-		"-a",
-		"--",
-		"foo",
-		"-b",
-	},
-	map[string]interface{} {
-		"a": true,
-		"b": false,
-	},
-	[]string{
-		"foo",
-		"-b",
-	},
-}}
+}
 
-func TestGnuParse(t *testing.T) {
-	for i, g := range gnuTests {
-		f := NewFlagSet("gnu test", ContinueOnError)
+func testParse(newFlagSet func() *FlagSet, t *testing.T) {
+	for i, g := range parseTests {
+		f := newFlagSet()
 		flags := make(map[string]interface{})
 		for name, val := range g.vals {
 			switch val.(type) {
 			case bool:
 				flags[name] = f.Bool(name, false, "bool value "+name)
 			case string:
-				flags[name] = f.String(name, "", "string value "+name)
+				flags[name] = f.String(name, "default", "string value "+name)
+			case int:
+				flags[name] = f.Int(name, 99, "int value "+name)
+			case uint:
+				flags[name] = f.Uint(name, 0, "uint value")
+			case uint64:
+				flags[name] = f.Uint64(name, 0, "uint64 value")
+			case int64:
+				flags[name] = f.Int64(name, 0, "uint64 value")
+			case float64:
+				flags[name] = f.Float64(name, 0, "float64 value")
+			case time.Duration:
+				flags[name] = f.Duration(name, 5*time.Second, "duration value")
+			default:
+				panic(fmt.Errorf("unhandled type %T", val))
 			}
 		}
-		err := f.ParseGnu(g.intersperse, g.args)
+		err := f.Parse(g.intersperse, g.args)
 		if err != nil {
-			t.Fatal(err)
+			if err.Error() != g.error {
+				t.Errorf("test %d; expected error %q got %q", i, g.error, err.Error())
+			}
+			continue
 		}
 		for name, val := range g.vals {
-			var actual interface{}
-			switch val.(type) {
-			case bool:
-				actual = *(flags[name].(*bool))
-			case string:
-				actual = *(flags[name].(*string))
-			}
+			actual := reflect.ValueOf(flags[name]).Elem().Interface()
 			if val != actual {
 				t.Errorf("test %d: flag %q, expected %v got %v", i, name, val, actual)
 			}
@@ -230,79 +317,21 @@ func TestGnuParse(t *testing.T) {
 	}
 }
 
-func testParse(f *FlagSet, t *testing.T) {
-	if f.Parsed() {
-		t.Error("f.Parse() = true before Parse")
-	}
-	boolFlag := f.Bool("bool", false, "bool value")
-	bool2Flag := f.Bool("bool2", false, "bool2 value")
-	intFlag := f.Int("int", 0, "int value")
-	int64Flag := f.Int64("int64", 0, "int64 value")
-	uintFlag := f.Uint("uint", 0, "uint value")
-	uint64Flag := f.Uint64("uint64", 0, "uint64 value")
-	stringFlag := f.String("string", "0", "string value")
-	float64Flag := f.Float64("float64", 0, "float64 value")
-	durationFlag := f.Duration("duration", 5*time.Second, "time.Duration value")
-	extra := "one-extra-argument"
-	args := []string{
-		"-bool",
-		"-bool2=true",
-		"--int", "22",
-		"--int64", "0x23",
-		"-uint", "24",
-		"--uint64", "25",
-		"-string", "hello",
-		"-float64", "2718e28",
-		"-duration", "2m",
-		extra,
-	}
-	if err := f.Parse(args); err != nil {
-		t.Fatal(err)
-	}
-	if !f.Parsed() {
-		t.Error("f.Parse() = false after Parse")
-	}
-	if *boolFlag != true {
-		t.Error("bool flag should be true, is ", *boolFlag)
-	}
-	if *bool2Flag != true {
-		t.Error("bool2 flag should be true, is ", *bool2Flag)
-	}
-	if *intFlag != 22 {
-		t.Error("int flag should be 22, is ", *intFlag)
-	}
-	if *int64Flag != 0x23 {
-		t.Error("int64 flag should be 0x23, is ", *int64Flag)
-	}
-	if *uintFlag != 24 {
-		t.Error("uint flag should be 24, is ", *uintFlag)
-	}
-	if *uint64Flag != 25 {
-		t.Error("uint64 flag should be 25, is ", *uint64Flag)
-	}
-	if *stringFlag != "hello" {
-		t.Error("string flag should be `hello`, is ", *stringFlag)
-	}
-	if *float64Flag != 2718e28 {
-		t.Error("float64 flag should be 2718e28, is ", *float64Flag)
-	}
-	if *durationFlag != 2*time.Minute {
-		t.Error("duration flag should be 2m, is ", *durationFlag)
-	}
-	if len(f.Args()) != 1 {
-		t.Error("expected one argument, got", len(f.Args()))
-	} else if f.Args()[0] != extra {
-		t.Errorf("expected argument %q got %q", extra, f.Args()[0])
-	}
-}
-
 func TestParse(t *testing.T) {
-	ResetForTesting(func() { t.Error("bad parse") })
-	testParse(CommandLine(), t)
+	testParse(func() *FlagSet {
+		ResetForTesting(func() {})
+		f := CommandLine()
+		f.Stderr = nullWriter{}
+		return f
+	}, t)
 }
 
 func TestFlagSetParse(t *testing.T) {
-	testParse(NewFlagSet("test", ContinueOnError), t)
+	testParse(func() *FlagSet {
+		f := NewFlagSet("test", ContinueOnError)
+		f.Stderr = nullWriter{}
+		return f
+	}, t)
 }
 
 // Declare a user-defined flag type.
@@ -322,7 +351,7 @@ func TestUserDefined(t *testing.T) {
 	flags.Init("test", ContinueOnError)
 	var v flagVar
 	flags.Var(&v, "v", "usage")
-	if err := flags.Parse([]string{"-v", "1", "-v", "2", "-v=3"}); err != nil {
+	if err := flags.Parse(true, []string{"-v", "1", "-v", "2", "-v3"}); err != nil {
 		t.Error(err)
 	}
 	if len(v) != 3 {
@@ -340,15 +369,15 @@ func TestChangingArgs(t *testing.T) {
 	ResetForTesting(func() { t.Fatal("bad parse") })
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"cmd", "-before", "subcmd", "-after", "args"}
+	os.Args = []string{"cmd", "--before", "subcmd", "--after", "args"}
 	before := Bool("before", false, "")
-	if err := CommandLine().Parse(os.Args[1:]); err != nil {
+	if err := CommandLine().Parse(false, os.Args[1:]); err != nil {
 		t.Fatal(err)
 	}
 	cmd := Arg(0)
 	os.Args = Args()
 	after := Bool("after", false, "")
-	Parse()
+	Parse(false)
 	args := Args()
 
 	if !*before || cmd != "subcmd" || !*after || len(args) != 1 || args[0] != "args" {
@@ -360,23 +389,24 @@ func TestChangingArgs(t *testing.T) {
 func TestHelp(t *testing.T) {
 	var helpCalled = false
 	fs := NewFlagSet("help test", ContinueOnError)
+	fs.Stderr = nullWriter{}
 	fs.Usage = func() { helpCalled = true }
 	var flag bool
 	fs.BoolVar(&flag, "flag", false, "regular flag")
 	// Regular flag invocation should work
-	err := fs.Parse([]string{"-flag=true"})
+	err := fs.Parse(true, []string{"--flag"})
 	if err != nil {
 		t.Fatal("expected no error; got ", err)
 	}
 	if !flag {
-		t.Error("flag was not set by -flag")
+		t.Error("flag was not set by --flag")
 	}
 	if helpCalled {
 		t.Error("help called for regular flag")
 		helpCalled = false // reset for next test
 	}
 	// Help flag should work as expected.
-	err = fs.Parse([]string{"-help"})
+	err = fs.Parse(true, []string{"--help"})
 	if err == nil {
 		t.Fatal("error expected")
 	}
@@ -390,17 +420,24 @@ func TestHelp(t *testing.T) {
 	var help bool
 	fs.BoolVar(&help, "help", false, "help flag")
 	helpCalled = false
-	err = fs.Parse([]string{"-help"})
+	err = fs.Parse(true, []string{"--help"})
 	if err != nil {
-		t.Fatal("expected no error for defined -help; got ", err)
+		t.Fatal("expected no error for defined --help; got ", err)
 	}
 	if helpCalled {
 		t.Fatal("help was called; should not have been for defined help flag")
 	}
 }
 
+type nullWriter struct{}
+
+func (nullWriter) Write(buf []byte) (int, error) {
+	return len(buf), nil
+}
+
 func TestPrintDefaults(t *testing.T) {
 	f := NewFlagSet("print test", ContinueOnError)
+	f.Stderr = nullWriter{}
 	var b bool
 	var c int
 	var d string
@@ -416,9 +453,9 @@ func TestPrintDefaults(t *testing.T) {
 
 	f.Float64Var(&e, "elephant", 3.14, "elephant usage")
 
-	got := f.DefaultsString()
+	got := defaultsString(f)
 	expect :=
-`-b, --bal, --balalaika  (= false)
+		`-b, --bal, --balalaika  (= false)
     b usage
 -c, --trapclap  (= 99)
     c usage
@@ -428,6 +465,17 @@ func TestPrintDefaults(t *testing.T) {
     elephant usage
 `
 	if got != expect {
-		t.Error("expect %q got %q", expect, got)
+		t.Errorf("expect %q got %q", expect, got)
 	}
+}
+
+// DefaultsString returns the output of PrintDefaults
+// as a string.
+func defaultsString(f *FlagSet) string {
+	old := f.Stderr
+	var b bytes.Buffer
+	f.Stderr = &b
+	f.PrintDefaults()
+	f.Stderr = old
+	return b.String()
 }

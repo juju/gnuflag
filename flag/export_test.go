@@ -5,7 +5,6 @@
 package flag
 
 import (
-	"bytes"
 	"os"
 )
 
@@ -22,12 +21,4 @@ func ResetForTesting(usage func()) {
 // CommandLine returns the default FlagSet.
 func CommandLine() *FlagSet {
 	return commandLine
-}
-
-// DefaultsString returns the output of PrintDefaults
-// as a string.
-func (f *FlagSet) DefaultsString() string {
-	var b bytes.Buffer
-	f.printDefaults(&b)
-	return b.String()
 }

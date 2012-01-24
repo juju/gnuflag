@@ -341,11 +341,7 @@ func (f *FlagSet) PrintDefaults() {
 			if i > 0 {
 				line.WriteString(", ")
 			}
-			if len(f.Name) > 1 {
-				line.WriteRune('-')
-			}
-			line.WriteRune('-')
-			line.WriteString(f.Name)
+			line.WriteString(flagWithMinus(f.Name))
 		}
 		format := "%s  (= %s)\n    %s\n"
 		if _, ok := fs[0].Value.(*stringValue); ok {
@@ -772,7 +768,7 @@ func (f *FlagSet) parseGnuFlagArg(name string) (finished bool, err error) {
 // Parse parses flag definitions from the argument list, which should not
 // include the command name.  Must be called after all flags in the FlagSet
 // are defined and before flags are accessed by the program.
-// The return value will be ErrHelp if -help was set but not defined.
+// The return value will be ErrHelp if --help was set but not defined.
 // If allowIntersperse is set, arguments and flags can be interspersed, that
 // is flags can follow positional arguments.
 func (f *FlagSet) Parse(allowIntersperse bool, arguments []string) error {

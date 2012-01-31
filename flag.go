@@ -25,7 +25,7 @@
 	non-flag argument ("-" is a non-flag argument) if the interspersed
 	argument to Parse is false. 
 */
-package flag
+package gnuflag
 
 import (
 	"bytes"

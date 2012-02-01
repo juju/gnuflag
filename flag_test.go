@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package flag_test
+package gnuflag_test
 
 import (
 	"bytes"
@@ -446,6 +446,7 @@ func TestPrintDefaults(t *testing.T) {
 	f.IntVar(&c, "c", 99, "c usage")
 
 	f.BoolVar(&b, "bal", false, "usage not shown")
+	f.BoolVar(&b, "x", false, "usage not shown")
 	f.BoolVar(&b, "b", false, "b usage")
 	f.BoolVar(&b, "balalaika", false, "usage not shown")
 
@@ -455,7 +456,7 @@ func TestPrintDefaults(t *testing.T) {
 
 	got := defaultsString(f)
 	expect :=
-		`-b, --bal, --balalaika  (= false)
+		`-b, -x, --bal, --balalaika  (= false)
     b usage
 -c, --trapclap  (= 99)
     c usage

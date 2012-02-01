@@ -295,7 +295,11 @@ func Set(name, value string) error {
 type flagsByLength []*Flag
 
 func (f flagsByLength) Less(i, j int) bool {
-	return len(f[i].Name) < len(f[j].Name)
+	s1, s2 := f[i].Name, f[j].Name
+	if len(s1) != len(s2) {
+		return len(s1) < len(s2)
+	}
+	return s1 < s2
 }
 func (f flagsByLength) Swap(i, j int) {
 	f[i], f[j] = f[j], f[i]
@@ -318,7 +322,8 @@ func (f flagsByName) Len() int {
 
 // PrintDefaults prints to f.Stderr the default values of all defined flags in the set.
 // If there is more than one name for a given flag, the usage information and
-// default value from the shortest will be printed.
+// default value from the shortest will be printed (or the least alphabetically
+// if there are several equally short flag names).
 func (f *FlagSet) PrintDefaults() {
 	// group together all flags for a given value
 	flags := make(map[interface{}]flagsByLength)

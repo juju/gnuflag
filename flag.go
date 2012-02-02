@@ -303,6 +303,9 @@ func Set(name, value string) error {
 	return commandLine.Set(name, value)
 }
 
+// flagsByLength is a slice of flags implementing sort.Interface,
+// sorting primarily by the length of the flag, and secondarily
+// alphabetically.
 type flagsByLength []*Flag
 
 func (f flagsByLength) Less(i, j int) bool {
@@ -319,6 +322,8 @@ func (f flagsByLength) Len() int {
 	return len(f)
 }
 
+// flagsByName is a slice of slices of flags implementing sort.Interface,
+// alphabetically sorting by the name of the first flag in each slice.
 type flagsByName [][]*Flag
 
 func (f flagsByName) Less(i, j int) bool {

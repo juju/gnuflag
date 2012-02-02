@@ -11,6 +11,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -97,7 +98,7 @@ func TestUsage(t *testing.T) {
 	called := false
 	ResetForTesting(func() { called = true })
 	f := CommandLine()
-	f.Stderr = nullWriter{}
+	f.SetOutput(nullWriter{})
 	if f.Parse(true, []string{"-x"}) == nil {
 		t.Error("parse did not fail for unknown flag")
 	}
@@ -321,7 +322,7 @@ func TestParse(t *testing.T) {
 	testParse(func() *FlagSet {
 		ResetForTesting(func() {})
 		f := CommandLine()
-		f.Stderr = nullWriter{}
+		f.SetOutput(nullWriter{})
 		return f
 	}, t)
 }
@@ -329,7 +330,7 @@ func TestParse(t *testing.T) {
 func TestFlagSetParse(t *testing.T) {
 	testParse(func() *FlagSet {
 		f := NewFlagSet("test", ContinueOnError)
-		f.Stderr = nullWriter{}
+		f.SetOutput(nullWriter{})
 		return f
 	}, t)
 }
@@ -363,6 +364,17 @@ func TestUserDefined(t *testing.T) {
 	}
 }
 
+func TestSetOutput(t *testing.T) {
+	var flags FlagSet
+	var buf bytes.Buffer
+	flags.SetOutput(&buf)
+	flags.Init("test", ContinueOnError)
+	flags.Parse(true, []string{"-unknown"})
+	if out := buf.String(); !strings.Contains(out, "-unknown") {
+		t.Logf("expected output mentioning unknown; got %q", out)
+	}
+}
+
 // This tests that one can reset the flags. This still works but not well, and is
 // superseded by FlagSet.
 func TestChangingArgs(t *testing.T) {
@@ -389,7 +401,7 @@ func TestChangingArgs(t *testing.T) {
 func TestHelp(t *testing.T) {
 	var helpCalled = false
 	fs := NewFlagSet("help test", ContinueOnError)
-	fs.Stderr = nullWriter{}
+	fs.SetOutput(nullWriter{})
 	fs.Usage = func() { helpCalled = true }
 	var flag bool
 	fs.BoolVar(&flag, "flag", false, "regular flag")
@@ -437,7 +449,7 @@ func (nullWriter) Write(buf []byte) (int, error) {
 
 func TestPrintDefaults(t *testing.T) {
 	f := NewFlagSet("print test", ContinueOnError)
-	f.Stderr = nullWriter{}
+	f.SetOutput(nullWriter{})
 	var b bool
 	var c int
 	var d string
@@ -454,7 +466,11 @@ func TestPrintDefaults(t *testing.T) {
 
 	f.Float64Var(&e, "elephant", 3.14, "elephant usage")
 
-	got := defaultsString(f)
+	var buf bytes.Buffer
+	f.SetOutput(&buf)
+	f.PrintDefaults()
+	f.SetOutput(nullWriter{})
+
 	expect :=
 		`-b, -x, --bal, --balalaika  (= false)
     b usage
@@ -465,18 +481,7 @@ func TestPrintDefaults(t *testing.T) {
 --elephant  (= 3.14)
     elephant usage
 `
-	if got != expect {
-		t.Errorf("expect %q got %q", expect, got)
+	if buf.String() != expect {
+		t.Errorf("expect %q got %q", expect, buf.String())
 	}
-}
-
-// DefaultsString returns the output of PrintDefaults
-// as a string.
-func defaultsString(f *FlagSet) string {
-	old := f.Stderr
-	var b bytes.Buffer
-	f.Stderr = &b
-	f.PrintDefaults()
-	f.Stderr = old
-	return b.String()
 }

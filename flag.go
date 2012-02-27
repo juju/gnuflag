@@ -192,9 +192,6 @@ type FlagSet struct {
 	// a custom error handler.
 	Usage func()
 
-	// Errors will be printed to Stderr, which is set to os.Stderr by default.
-	Stderr io.Writer
-
 	name             string
 	parsed           bool
 	actual           map[string]*Flag
@@ -205,6 +202,7 @@ type FlagSet struct {
 	allowIntersperse bool     // (gnu only)
 	exitOnError      bool     // does the program exit if there's an error?
 	errorHandling    ErrorHandling
+	output           io.Writer // nil means stderr; use out() accessor
 }
 
 // A Flag represents the state of a flag.
@@ -229,6 +227,19 @@ func sortFlags(flags map[string]*Flag) []*Flag {
 		result[i] = flags[name]
 	}
 	return result
+}
+
+func (f *FlagSet) out() io.Writer {
+	if f.output == nil {
+		return os.Stderr
+	}
+	return f.output
+}
+
+// SetOutput sets the destination for usage and error messages.
+// If output is nil, os.Stderr is used.
+func (f *FlagSet) SetOutput(output io.Writer) {
+	f.output = output
 }
 
 // VisitAll visits the flags in lexicographical order, calling fn for each.
@@ -292,10 +303,17 @@ func Set(name, value string) error {
 	return commandLine.Set(name, value)
 }
 
+// flagsByLength is a slice of flags implementing sort.Interface,
+// sorting primarily by the length of the flag, and secondarily
+// alphabetically.
 type flagsByLength []*Flag
 
 func (f flagsByLength) Less(i, j int) bool {
-	return len(f[i].Name) < len(f[j].Name)
+	s1, s2 := f[i].Name, f[j].Name
+	if len(s1) != len(s2) {
+		return len(s1) < len(s2)
+	}
+	return s1 < s2
 }
 func (f flagsByLength) Swap(i, j int) {
 	f[i], f[j] = f[j], f[i]
@@ -304,6 +322,8 @@ func (f flagsByLength) Len() int {
 	return len(f)
 }
 
+// flagsByName is a slice of slices of flags implementing sort.Interface,
+// alphabetically sorting by the name of the first flag in each slice.
 type flagsByName [][]*Flag
 
 func (f flagsByName) Less(i, j int) bool {
@@ -316,9 +336,11 @@ func (f flagsByName) Len() int {
 	return len(f)
 }
 
-// PrintDefaults prints to f.Stderr the default values of all defined flags in the set.
+// PrintDefaults prints, to standard error unless configured
+// otherwise, the default values of all defined flags in the set.
 // If there is more than one name for a given flag, the usage information and
-// default value from the shortest will be printed.
+// default value from the shortest will be printed (or the least alphabetically
+// if there are several equally short flag names).
 func (f *FlagSet) PrintDefaults() {
 	// group together all flags for a given value
 	flags := make(map[interface{}]flagsByLength)
@@ -348,7 +370,7 @@ func (f *FlagSet) PrintDefaults() {
 			// put quotes on the value
 			format = "%s (= %q)\n    %s\n"
 		}
-		fmt.Fprintf(f.Stderr, format, line.Bytes(), fs[0].DefValue, fs[0].Usage)
+		fmt.Fprintf(f.out(), format, line.Bytes(), fs[0].DefValue, fs[0].Usage)
 	}
 }
 
@@ -359,7 +381,7 @@ func PrintDefaults() {
 
 // defaultUsage is the default function to print a usage message.
 func defaultUsage(f *FlagSet) {
-	fmt.Fprintf(f.Stderr, "Usage of %s:\n", f.name)
+	fmt.Fprintf(f.out(), "Usage of %s:\n", f.name)
 	f.PrintDefaults()
 }
 
@@ -626,7 +648,7 @@ func (f *FlagSet) Var(value Value, name string, usage string) {
 	flag := &Flag{name, usage, value, value.String()}
 	_, alreadythere := f.formal[name]
 	if alreadythere {
-		fmt.Fprintf(f.Stderr, "%s flag redefined: %s\n", f.name, name)
+		fmt.Fprintf(f.out(), "%s flag redefined: %s\n", f.name, name)
 		panic("flag redefinition") // Happens only if flags are declared with identical names
 	}
 	if f.formal == nil {
@@ -649,7 +671,7 @@ func Var(value Value, name string, usage string) {
 // returns the error.
 func (f *FlagSet) failf(format string, a ...interface{}) error {
 	err := fmt.Errorf(format, a...)
-	fmt.Fprintln(f.Stderr, err)
+	fmt.Fprintln(f.out(), err)
 	f.usage()
 	return err
 }
@@ -832,7 +854,6 @@ func NewFlagSet(name string, errorHandling ErrorHandling) *FlagSet {
 	f := &FlagSet{
 		name:          name,
 		errorHandling: errorHandling,
-		Stderr:        os.Stderr,
 	}
 	return f
 }

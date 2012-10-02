@@ -108,12 +108,14 @@ func TestUsage(t *testing.T) {
 }
 
 var parseTests = []struct {
+	about       string
 	intersperse bool
 	args        []string
 	vals        map[string]interface{}
 	remaining   []string
 	error       string
 }{{
+	about:       "regular args",
 	intersperse: true,
 	args: []string{
 		"--bool2",
@@ -141,6 +143,7 @@ var parseTests = []struct {
 		"one - extra - argument",
 	},
 }, {
+	about:       "playing with -",
 	intersperse: true,
 	args: []string{
 		"-a",
@@ -179,6 +182,7 @@ var parseTests = []struct {
 		"-5",
 	},
 }, {
+	about:       "flag after explicit --",
 	intersperse: true,
 	args: []string{
 		"-a",
@@ -193,6 +197,7 @@ var parseTests = []struct {
 		"-b",
 	},
 }, {
+	about: "flag after end",
 	args: []string{
 		"-a",
 		"foo",
@@ -207,6 +212,7 @@ var parseTests = []struct {
 		"-b",
 	},
 }, {
+	about: "arg and flag after explicit end",
 	args: []string{
 		"-a",
 		"--",
@@ -222,10 +228,11 @@ var parseTests = []struct {
 		"-b",
 	},
 }, {
+	about: "boolean args, explicitly and non-explicitly given",
 	args: []string{
-		"-a=false",
-		"-b=true",
-		"-c",
+		"--a=false",
+		"--b=true",
+		"--c",
 	},
 	vals: map[string]interface{}{
 		"a": false,
@@ -233,12 +240,13 @@ var parseTests = []struct {
 		"c": true,
 	},
 }, {
+	about: "using =",
 	args: []string{
 		"--arble=bar",
 		"--bletch=",
 		"--a=something",
 		"-b=other",
-		"-cd=and more",
+		"-cdand more",
 		"--curdle=--milk",
 		"--sandwich", "=",
 		"--darn=",
@@ -248,7 +256,7 @@ var parseTests = []struct {
 		"arble":    "bar",
 		"bletch":   "",
 		"a":        "something",
-		"b":        "other",
+		"b":        "=other",
 		"c":        true,
 		"d":        "and more",
 		"curdle":   "--milk",
@@ -257,10 +265,37 @@ var parseTests = []struct {
 	},
 	remaining: []string{"=arg"},
 }, {
+	about: "empty flag #1",
 	args: []string{
 		"--=bar",
 	},
 	error: `empty flag in argument "--=bar"`,
+}, {
+	about: "single-letter equals",
+	args: []string{
+		"-=bar",
+	},
+	error: `flag provided but not defined: -=`,
+}, {
+	about: "empty flag #2",
+	args: []string{
+		"--=",
+	},
+	error: `empty flag in argument "--="`,
+}, {
+	about: "no equals",
+	args: []string{
+		"-=",
+	},
+	error: `flag provided but not defined: -=`,
+}, {
+	args: []string{
+		"-a=true",
+	},
+	vals: map[string]interface{}{
+		"a": true,
+	},
+	error: `invalid value "=true" for flag -a: strconv.ParseBool: parsing "=true": invalid syntax`,
 }, {
 	intersperse: true,
 	args: []string{
@@ -294,6 +329,7 @@ var parseTests = []struct {
 
 func testParse(newFlagSet func() *FlagSet, t *testing.T) {
 	for i, g := range parseTests {
+		t.Logf("test %d. %s", i, g.about)
 		f := newFlagSet()
 		flags := make(map[string]interface{})
 		for name, val := range g.vals {
@@ -315,30 +351,30 @@ func testParse(newFlagSet func() *FlagSet, t *testing.T) {
 			case time.Duration:
 				flags[name] = f.Duration(name, 5*time.Second, "duration value")
 			default:
-				panic(fmt.Errorf("unhandled type %T", val))
+				t.Fatalf("unhandled type %T", val)
 			}
 		}
 		err := f.Parse(g.intersperse, g.args)
 		if g.error != "" {
 			if err == nil {
-				t.Errorf("test %d; expected error %q got nil", i, g.error)
+				t.Errorf("expected error %q got nil", g.error)
 			} else if err.Error() != g.error {
-				t.Errorf("test %d; expected error %q got %q", i, g.error, err.Error())
+				t.Errorf("expected error %q got %q", g.error, err.Error())
 			}
 			continue
 		}
 		for name, val := range g.vals {
 			actual := reflect.ValueOf(flags[name]).Elem().Interface()
 			if val != actual {
-				t.Errorf("test %d: flag %q, expected %v got %v", i, name, val, actual)
+				t.Errorf("flag %q, expected %v got %v", name, val, actual)
 			}
 		}
 		if len(f.Args()) != len(g.remaining) {
-			t.Fatalf("test %d: remaining args, expected %q got %q", i, g.remaining, f.Args())
+			t.Fatalf("remaining args, expected %q got %q", g.remaining, f.Args())
 		}
 		for j, a := range f.Args() {
 			if a != g.remaining[j] {
-				t.Errorf("test %d: arg %d, expected %q got %q", i, j, g.remaining[i], a)
+				t.Errorf("arg %d, expected %q got %q", j, g.remaining[i], a)
 			}
 		}
 	}

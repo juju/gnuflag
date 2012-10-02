@@ -113,159 +113,181 @@ var parseTests = []struct {
 	vals        map[string]interface{}
 	remaining   []string
 	error       string
-}{
-	{
-		true,
-		[]string{
-			"--bool2",
-			"--int", "22",
-			"--int64", "0x23",
-			"--uint", "24",
-			"--uint64", "25",
-			"--string", "hello",
-			"--float64", "2718e28",
-			"--duration", "2m",
-			"one - extra - argument",
-		},
-		map[string]interface{}{
-			"bool":     false,
-			"bool2":    true,
-			"int":      22,
-			"int64":    int64(0x23),
-			"uint":     uint(24),
-			"uint64":   uint64(25),
-			"string":   "hello",
-			"float64":  2718e28,
-			"duration": 2 * 60 * time.Second,
-		},
-		[]string{
-			"one - extra - argument",
-		},
-		"",
+}{{
+	intersperse: true,
+	args: []string{
+		"--bool2",
+		"--int", "22",
+		"--int64", "0x23",
+		"--uint", "24",
+		"--uint64", "25",
+		"--string", "hello",
+		"--float64", "2718e28",
+		"--duration", "2m",
+		"one - extra - argument",
 	},
-	{
-		true,
-		[]string{
-			"-a",
-			"-",
-			"-bc",
-			"2",
-			"-de1s",
-			"-f2s",
-			"-g", "3s",
-			"--h",
-			"--long",
-			"--long2", "-4s",
-			"3",
-			"4",
-			"--", "-5",
-		},
-		map[string]interface{}{
-			"a":     true,
-			"b":     true,
-			"c":     true,
-			"d":     true,
-			"e":     "1s",
-			"f":     "2s",
-			"g":     "3s",
-			"h":     true,
-			"long":  true,
-			"long2": "-4s",
-			"z":     "default",
-			"www":   99,
-		},
-		[]string{
-			"-",
-			"2",
-			"3",
-			"4",
-			"-5",
-		},
-		"",
-	}, {
-		true,
-		[]string{
-			"-a",
-			"--",
-			"-b",
-		},
-		map[string]interface{}{
-			"a": true,
-			"b": false,
-		},
-		[]string{
-			"-b",
-		},
-		"",
-	}, {
-		false,
-		[]string{
-			"-a",
-			"foo",
-			"-b",
-		},
-		map[string]interface{}{
-			"a": true,
-			"b": false,
-		},
-		[]string{
-			"foo",
-			"-b",
-		},
-		"",
+	vals: map[string]interface{}{
+		"bool":     false,
+		"bool2":    true,
+		"int":      22,
+		"int64":    int64(0x23),
+		"uint":     uint(24),
+		"uint64":   uint64(25),
+		"string":   "hello",
+		"float64":  2718e28,
+		"duration": 2 * 60 * time.Second,
 	},
-	{
-		false,
-		[]string{
-			"-a",
-			"--",
-			"foo",
-			"-b",
-		},
-		map[string]interface{}{
-			"a": true,
-			"b": false,
-		},
-		[]string{
-			"foo",
-			"-b",
-		},
-		"",
+	remaining: []string{
+		"one - extra - argument",
 	},
-	{
-		true,
-		[]string{
-			"-a",
-			"-b",
-		},
-		map[string]interface{}{
-			"a": true,
-		},
-		nil,
-		"flag provided but not defined: -b",
+}, {
+	intersperse: true,
+	args: []string{
+		"-a",
+		"-",
+		"-bc",
+		"2",
+		"-de1s",
+		"-f2s",
+		"-g", "3s",
+		"--h",
+		"--long",
+		"--long2", "-4s",
+		"3",
+		"4",
+		"--", "-5",
 	},
-	{
-		true,
-		[]string{
-			"-a",
-		},
-		map[string]interface{}{
-			"a": "default",
-		},
-		nil,
-		"flag needs an argument: -a",
+	vals: map[string]interface{}{
+		"a":     true,
+		"b":     true,
+		"c":     true,
+		"d":     true,
+		"e":     "1s",
+		"f":     "2s",
+		"g":     "3s",
+		"h":     true,
+		"long":  true,
+		"long2": "-4s",
+		"z":     "default",
+		"www":   99,
 	},
-	{
-		true,
-		[]string{
-			"-a", "b",
-		},
-		map[string]interface{}{
-			"a": 0,
-		},
-		nil,
-		`invalid value "b" for flag -a: strconv.ParseInt: parsing "b": invalid syntax`,
+	remaining: []string{
+		"-",
+		"2",
+		"3",
+		"4",
+		"-5",
 	},
+}, {
+	intersperse: true,
+	args: []string{
+		"-a",
+		"--",
+		"-b",
+	},
+	vals: map[string]interface{}{
+		"a": true,
+		"b": false,
+	},
+	remaining: []string{
+		"-b",
+	},
+}, {
+	args: []string{
+		"-a",
+		"foo",
+		"-b",
+	},
+	vals: map[string]interface{}{
+		"a": true,
+		"b": false,
+	},
+	remaining: []string{
+		"foo",
+		"-b",
+	},
+}, {
+	args: []string{
+		"-a",
+		"--",
+		"foo",
+		"-b",
+	},
+	vals: map[string]interface{}{
+		"a": true,
+		"b": false,
+	},
+	remaining: []string{
+		"foo",
+		"-b",
+	},
+}, {
+	args: []string{
+		"-a=false",
+		"-b=true",
+		"-c",
+	},
+	vals: map[string]interface{}{
+		"a": false,
+		"b": true,
+		"c": true,
+	},
+}, {
+	args: []string{
+		"--arble=bar",
+		"--bletch=",
+		"--a=something",
+		"-b=other",
+		"-cd=and more",
+		"--curdle=--milk",
+		"--darn=",
+		"=arg",
+	},
+	vals: map[string]interface{}{
+		"arble":  "bar",
+		"bletch": "",
+		"a":      "something",
+		"b":      "other",
+		"c":      true,
+		"d":      "and more",
+		"curdle": "--milk",
+		"darn":   "",
+	},
+	remaining: []string{"=arg"},
+}, {
+	args: []string{
+		"--=bar",
+	},
+	error: `empty flag in argument "--=bar"`,
+}, {
+	intersperse: true,
+	args: []string{
+		"-a",
+		"-b",
+	},
+	vals: map[string]interface{}{
+		"a": true,
+	},
+	error: "flag provided but not defined: -b",
+}, {
+	intersperse: true,
+	args: []string{
+		"-a",
+	},
+	vals: map[string]interface{}{
+		"a": "default",
+	},
+	error: "flag needs an argument: -a",
+}, {
+	intersperse: true,
+	args: []string{
+		"-a", "b",
+	},
+	vals: map[string]interface{}{
+		"a": 0,
+	},
+	error: `invalid value "b" for flag -a: strconv.ParseInt: parsing "b": invalid syntax`,
+},
 }
 
 func testParse(newFlagSet func() *FlagSet, t *testing.T) {
@@ -295,8 +317,10 @@ func testParse(newFlagSet func() *FlagSet, t *testing.T) {
 			}
 		}
 		err := f.Parse(g.intersperse, g.args)
-		if err != nil {
-			if err.Error() != g.error {
+		if g.error != "" {
+			if err == nil {
+				t.Errorf("test %d; expected error %q got nil", i, g.error)
+			} else if err.Error() != g.error {
 				t.Errorf("test %d; expected error %q got %q", i, g.error, err.Error())
 			}
 			continue

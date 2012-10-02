@@ -35,6 +35,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -723,9 +724,18 @@ func (f *FlagSet) parseOneGnu() (flagName string, finished bool, err error) {
 
 	// long flag signified with "--" prefix
 	if a[1] == '-' {
-		// TODO allow '=' so we can set bools to false?
-		flagName = a[2:]
+		i := strings.Index(a, "=")
+		if i < 0 {
+			flagName = a[2:]
+			f.procArgs = f.procArgs[1:]
+			return
+		}
+		flagName = a[2:i]
+		if flagName == "" {
+			return "", true, fmt.Errorf("empty flag in argument %q", a)
+		}
 		f.procArgs = f.procArgs[1:]
+		f.procFlag = a[i:]
 		return
 	}
 
@@ -756,7 +766,9 @@ func (f *FlagSet) parseGnuFlagArg(name string) (finished bool, err error) {
 		// TODO print --xxx when flag is more than one rune.
 		return false, f.failf("flag provided but not defined: %s", flagWithMinus(name))
 	}
-	if fv, ok := flag.Value.(*boolValue); ok { // special case: doesn't need an arg
+	if fv, ok := flag.Value.(*boolValue); ok && !strings.HasPrefix(f.procFlag, "=") {
+		// special case: doesn't need an arg, and an arg hasn't
+		// been provided explicitly.
 		fv.Set("true")
 	} else {
 		// It must have a value, which might be the next argument.
@@ -765,6 +777,9 @@ func (f *FlagSet) parseGnuFlagArg(name string) (finished bool, err error) {
 		if f.procFlag != "" {
 			// value directly follows flag
 			value = f.procFlag
+			if value[0] == '=' {
+				value = value[1:]
+			}
 			hasValue = true
 			f.procFlag = ""
 		}

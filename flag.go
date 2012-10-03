@@ -35,6 +35,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -688,16 +689,18 @@ func (f *FlagSet) usage() {
 	}
 }
 
-func (f *FlagSet) parseOneGnu() (flagName string, finished bool, err error) {
+func (f *FlagSet) parseOneGnu() (flagName string, long, finished bool, err error) {
 	if len(f.procArgs) == 0 {
-		return "", true, nil
+		finished = true
+		return
 	}
 
 	// processing previously encountered single-rune flag
 	if flag := f.procFlag; len(flag) > 0 {
 		_, n := utf8.DecodeRuneInString(flag)
 		f.procFlag = flag[n:]
-		return flag[0:n], false, nil
+		flagName = flag[0:n]
+		return
 	}
 
 	a := f.procArgs[0]
@@ -707,25 +710,38 @@ func (f *FlagSet) parseOneGnu() (flagName string, finished bool, err error) {
 		if f.allowIntersperse {
 			f.args = append(f.args, a)
 			f.procArgs = f.procArgs[1:]
-			return "", false, nil
+			return
 		}
 		f.args = append(f.args, f.procArgs...)
 		f.procArgs = nil
-		return "", true, nil
+		finished = true
+		return
 	}
 
 	// end of flags
 	if f.procArgs[0] == "--" {
 		f.args = append(f.args, f.procArgs[1:]...)
 		f.procArgs = nil
-		return "", true, nil
+		finished = true
+		return
 	}
 
 	// long flag signified with "--" prefix
 	if a[1] == '-' {
-		// TODO allow '=' so we can set bools to false?
-		flagName = a[2:]
+		long = true
+		i := strings.Index(a, "=")
+		if i < 0 {
+			f.procArgs = f.procArgs[1:]
+			flagName = a[2:]
+			return
+		}
+		flagName = a[2:i]
+		if flagName == "" {
+			err = fmt.Errorf("empty flag in argument %q", a)
+			return
+		}
 		f.procArgs = f.procArgs[1:]
+		f.procFlag = a[i:]
 		return
 	}
 
@@ -745,7 +761,7 @@ func flagWithMinus(name string) string {
 	return "-" + name
 }
 
-func (f *FlagSet) parseGnuFlagArg(name string) (finished bool, err error) {
+func (f *FlagSet) parseGnuFlagArg(name string, long bool) (finished bool, err error) {
 	m := f.formal
 	flag, alreadythere := m[name] // BUG
 	if !alreadythere {
@@ -756,7 +772,9 @@ func (f *FlagSet) parseGnuFlagArg(name string) (finished bool, err error) {
 		// TODO print --xxx when flag is more than one rune.
 		return false, f.failf("flag provided but not defined: %s", flagWithMinus(name))
 	}
-	if fv, ok := flag.Value.(*boolValue); ok { // special case: doesn't need an arg
+	if fv, ok := flag.Value.(*boolValue); ok && !strings.HasPrefix(f.procFlag, "=") {
+		// special case: doesn't need an arg, and an arg hasn't
+		// been provided explicitly.
 		fv.Set("true")
 	} else {
 		// It must have a value, which might be the next argument.
@@ -765,6 +783,12 @@ func (f *FlagSet) parseGnuFlagArg(name string) (finished bool, err error) {
 		if f.procFlag != "" {
 			// value directly follows flag
 			value = f.procFlag
+			if long {
+				if value[0] != '=' {
+					panic("no leading '=' in long flag")
+				}
+				value = value[1:]
+			}
 			hasValue = true
 			f.procFlag = ""
 		}
@@ -800,10 +824,10 @@ func (f *FlagSet) Parse(allowIntersperse bool, arguments []string) error {
 	f.args = nil
 	f.allowIntersperse = allowIntersperse
 	for {
-		name, finished, err := f.parseOneGnu()
+		name, long, finished, err := f.parseOneGnu()
 		if !finished {
 			if name != "" {
-				finished, err = f.parseGnuFlagArg(name)
+				finished, err = f.parseGnuFlagArg(name, long)
 			}
 		}
 		if err != nil {

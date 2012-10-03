@@ -108,168 +108,228 @@ func TestUsage(t *testing.T) {
 }
 
 var parseTests = []struct {
+	about       string
 	intersperse bool
 	args        []string
 	vals        map[string]interface{}
 	remaining   []string
 	error       string
-}{
-	{
-		true,
-		[]string{
-			"--bool2",
-			"--int", "22",
-			"--int64", "0x23",
-			"--uint", "24",
-			"--uint64", "25",
-			"--string", "hello",
-			"--float64", "2718e28",
-			"--duration", "2m",
-			"one - extra - argument",
-		},
-		map[string]interface{}{
-			"bool":     false,
-			"bool2":    true,
-			"int":      22,
-			"int64":    int64(0x23),
-			"uint":     uint(24),
-			"uint64":   uint64(25),
-			"string":   "hello",
-			"float64":  2718e28,
-			"duration": 2 * 60 * time.Second,
-		},
-		[]string{
-			"one - extra - argument",
-		},
-		"",
+}{{
+	about:       "regular args",
+	intersperse: true,
+	args: []string{
+		"--bool2",
+		"--int", "22",
+		"--int64", "0x23",
+		"--uint", "24",
+		"--uint64", "25",
+		"--string", "hello",
+		"--float64", "2718e28",
+		"--duration", "2m",
+		"one - extra - argument",
 	},
-	{
-		true,
-		[]string{
-			"-a",
-			"-",
-			"-bc",
-			"2",
-			"-de1s",
-			"-f2s",
-			"-g", "3s",
-			"--h",
-			"--long",
-			"--long2", "-4s",
-			"3",
-			"4",
-			"--", "-5",
-		},
-		map[string]interface{}{
-			"a":     true,
-			"b":     true,
-			"c":     true,
-			"d":     true,
-			"e":     "1s",
-			"f":     "2s",
-			"g":     "3s",
-			"h":     true,
-			"long":  true,
-			"long2": "-4s",
-			"z":     "default",
-			"www":   99,
-		},
-		[]string{
-			"-",
-			"2",
-			"3",
-			"4",
-			"-5",
-		},
-		"",
-	}, {
-		true,
-		[]string{
-			"-a",
-			"--",
-			"-b",
-		},
-		map[string]interface{}{
-			"a": true,
-			"b": false,
-		},
-		[]string{
-			"-b",
-		},
-		"",
-	}, {
-		false,
-		[]string{
-			"-a",
-			"foo",
-			"-b",
-		},
-		map[string]interface{}{
-			"a": true,
-			"b": false,
-		},
-		[]string{
-			"foo",
-			"-b",
-		},
-		"",
+	vals: map[string]interface{}{
+		"bool":     false,
+		"bool2":    true,
+		"int":      22,
+		"int64":    int64(0x23),
+		"uint":     uint(24),
+		"uint64":   uint64(25),
+		"string":   "hello",
+		"float64":  2718e28,
+		"duration": 2 * 60 * time.Second,
 	},
-	{
-		false,
-		[]string{
-			"-a",
-			"--",
-			"foo",
-			"-b",
-		},
-		map[string]interface{}{
-			"a": true,
-			"b": false,
-		},
-		[]string{
-			"foo",
-			"-b",
-		},
-		"",
+	remaining: []string{
+		"one - extra - argument",
 	},
-	{
-		true,
-		[]string{
-			"-a",
-			"-b",
-		},
-		map[string]interface{}{
-			"a": true,
-		},
-		nil,
-		"flag provided but not defined: -b",
+}, {
+	about:       "playing with -",
+	intersperse: true,
+	args: []string{
+		"-a",
+		"-",
+		"-bc",
+		"2",
+		"-de1s",
+		"-f2s",
+		"-g", "3s",
+		"--h",
+		"--long",
+		"--long2", "-4s",
+		"3",
+		"4",
+		"--", "-5",
 	},
-	{
-		true,
-		[]string{
-			"-a",
-		},
-		map[string]interface{}{
-			"a": "default",
-		},
-		nil,
-		"flag needs an argument: -a",
+	vals: map[string]interface{}{
+		"a":     true,
+		"b":     true,
+		"c":     true,
+		"d":     true,
+		"e":     "1s",
+		"f":     "2s",
+		"g":     "3s",
+		"h":     true,
+		"long":  true,
+		"long2": "-4s",
+		"z":     "default",
+		"www":   99,
 	},
-	{
-		true,
-		[]string{
-			"-a", "b",
-		},
-		map[string]interface{}{
-			"a": 0,
-		},
-		nil,
-		`invalid value "b" for flag -a: strconv.ParseInt: parsing "b": invalid syntax`,
+	remaining: []string{
+		"-",
+		"2",
+		"3",
+		"4",
+		"-5",
 	},
+}, {
+	about:       "flag after explicit --",
+	intersperse: true,
+	args: []string{
+		"-a",
+		"--",
+		"-b",
+	},
+	vals: map[string]interface{}{
+		"a": true,
+		"b": false,
+	},
+	remaining: []string{
+		"-b",
+	},
+}, {
+	about: "flag after end",
+	args: []string{
+		"-a",
+		"foo",
+		"-b",
+	},
+	vals: map[string]interface{}{
+		"a": true,
+		"b": false,
+	},
+	remaining: []string{
+		"foo",
+		"-b",
+	},
+}, {
+	about: "arg and flag after explicit end",
+	args: []string{
+		"-a",
+		"--",
+		"foo",
+		"-b",
+	},
+	vals: map[string]interface{}{
+		"a": true,
+		"b": false,
+	},
+	remaining: []string{
+		"foo",
+		"-b",
+	},
+}, {
+	about: "boolean args, explicitly and non-explicitly given",
+	args: []string{
+		"--a=false",
+		"--b=true",
+		"--c",
+	},
+	vals: map[string]interface{}{
+		"a": false,
+		"b": true,
+		"c": true,
+	},
+}, {
+	about: "using =",
+	args: []string{
+		"--arble=bar",
+		"--bletch=",
+		"--a=something",
+		"-b=other",
+		"-cdand more",
+		"--curdle=--milk",
+		"--sandwich", "=",
+		"--darn=",
+		"=arg",
+	},
+	vals: map[string]interface{}{
+		"arble":    "bar",
+		"bletch":   "",
+		"a":        "something",
+		"b":        "=other",
+		"c":        true,
+		"d":        "and more",
+		"curdle":   "--milk",
+		"sandwich": "=",
+		"darn":     "",
+	},
+	remaining: []string{"=arg"},
+}, {
+	about: "empty flag #1",
+	args: []string{
+		"--=bar",
+	},
+	error: `empty flag in argument "--=bar"`,
+}, {
+	about: "single-letter equals",
+	args: []string{
+		"-=bar",
+	},
+	error: `flag provided but not defined: -=`,
+}, {
+	about: "empty flag #2",
+	args: []string{
+		"--=",
+	},
+	error: `empty flag in argument "--="`,
+}, {
+	about: "no equals",
+	args: []string{
+		"-=",
+	},
+	error: `flag provided but not defined: -=`,
+}, {
+	args: []string{
+		"-a=true",
+	},
+	vals: map[string]interface{}{
+		"a": true,
+	},
+	error: `invalid value "=true" for flag -a: strconv.ParseBool: parsing "=true": invalid syntax`,
+}, {
+	intersperse: true,
+	args: []string{
+		"-a",
+		"-b",
+	},
+	vals: map[string]interface{}{
+		"a": true,
+	},
+	error: "flag provided but not defined: -b",
+}, {
+	intersperse: true,
+	args: []string{
+		"-a",
+	},
+	vals: map[string]interface{}{
+		"a": "default",
+	},
+	error: "flag needs an argument: -a",
+}, {
+	intersperse: true,
+	args: []string{
+		"-a", "b",
+	},
+	vals: map[string]interface{}{
+		"a": 0,
+	},
+	error: `invalid value "b" for flag -a: strconv.ParseInt: parsing "b": invalid syntax`,
+},
 }
 
 func testParse(newFlagSet func() *FlagSet, t *testing.T) {
 	for i, g := range parseTests {
+		t.Logf("test %d. %s", i, g.about)
 		f := newFlagSet()
 		flags := make(map[string]interface{})
 		for name, val := range g.vals {
@@ -291,28 +351,30 @@ func testParse(newFlagSet func() *FlagSet, t *testing.T) {
 			case time.Duration:
 				flags[name] = f.Duration(name, 5*time.Second, "duration value")
 			default:
-				panic(fmt.Errorf("unhandled type %T", val))
+				t.Fatalf("unhandled type %T", val)
 			}
 		}
 		err := f.Parse(g.intersperse, g.args)
-		if err != nil {
-			if err.Error() != g.error {
-				t.Errorf("test %d; expected error %q got %q", i, g.error, err.Error())
+		if g.error != "" {
+			if err == nil {
+				t.Errorf("expected error %q got nil", g.error)
+			} else if err.Error() != g.error {
+				t.Errorf("expected error %q got %q", g.error, err.Error())
 			}
 			continue
 		}
 		for name, val := range g.vals {
 			actual := reflect.ValueOf(flags[name]).Elem().Interface()
 			if val != actual {
-				t.Errorf("test %d: flag %q, expected %v got %v", i, name, val, actual)
+				t.Errorf("flag %q, expected %v got %v", name, val, actual)
 			}
 		}
 		if len(f.Args()) != len(g.remaining) {
-			t.Fatalf("test %d: remaining args, expected %q got %q", i, g.remaining, f.Args())
+			t.Fatalf("remaining args, expected %q got %q", g.remaining, f.Args())
 		}
 		for j, a := range f.Args() {
 			if a != g.remaining[j] {
-				t.Errorf("test %d: arg %d, expected %q got %q", i, j, g.remaining[i], a)
+				t.Errorf("arg %d, expected %q got %q", j, g.remaining[i], a)
 			}
 		}
 	}

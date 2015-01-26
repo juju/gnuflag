@@ -94,10 +94,54 @@ func TestEverything(t *testing.T) {
 	}
 }
 
+func TestGet(t *testing.T) {
+	ResetForTesting(nil)
+	Bool("test_bool", true, "bool value")
+	Int("test_int", 1, "int value")
+	Int64("test_int64", 2, "int64 value")
+	Uint("test_uint", 3, "uint value")
+	Uint64("test_uint64", 4, "uint64 value")
+	String("test_string", "5", "string value")
+	Float64("test_float64", 6, "float64 value")
+	Duration("test_duration", 7, "time.Duration value")
+
+	visitor := func(f *Flag) {
+		if len(f.Name) > 5 && f.Name[0:5] == "test_" {
+			g, ok := f.Value.(Getter)
+			if !ok {
+				t.Errorf("Visit: value does not satisfy Getter: %T", f.Value)
+				return
+			}
+			switch f.Name {
+			case "test_bool":
+				ok = g.Get() == true
+			case "test_int":
+				ok = g.Get() == int(1)
+			case "test_int64":
+				ok = g.Get() == int64(2)
+			case "test_uint":
+				ok = g.Get() == uint(3)
+			case "test_uint64":
+				ok = g.Get() == uint64(4)
+			case "test_string":
+				ok = g.Get() == "5"
+			case "test_float64":
+				ok = g.Get() == float64(6)
+			case "test_duration":
+				ok = g.Get() == time.Duration(7)
+			}
+			if !ok {
+				t.Errorf("Visit: bad value %T(%v) for %s", g.Get(), g.Get(), f.Name)
+			}
+		}
+	}
+	VisitAll(visitor)
+}
+
 func TestUsage(t *testing.T) {
 	called := false
 	ResetForTesting(func() { called = true })
-	f := CommandLine()
+	f := CommandLine
 	f.SetOutput(nullWriter{})
 	if f.Parse(true, []string{"-x"}) == nil {
 		t.Error("parse did not fail for unknown flag")
@@ -383,9 +427,8 @@ func testParse(newFlagSet func() *FlagSet, t *testing.T) {
 func TestParse(t *testing.T) {
 	testParse(func() *FlagSet {
 		ResetForTesting(func() {})
-		f := CommandLine()
-		f.SetOutput(nullWriter{})
-		return f
+		CommandLine.SetOutput(nullWriter{})
+		return CommandLine
 	}, t)
 }
 
@@ -426,6 +469,57 @@ func TestUserDefined(t *testing.T) {
 	}
 }
 
+func TestUserDefinedForCommandLine(t *testing.T) {
+	const help = "HELP"
+	var result string
+	ResetForTesting(func() { result = help })
+	Usage()
+	if result != help {
+		t.Fatalf("got %q; expected %q", result, help)
+	}
+}
+
+// Declare a user-defined boolean flag type.
+type boolFlagVar struct {
+	count int
+}
+
+func (b *boolFlagVar) String() string {
+	return fmt.Sprintf("%d", b.count)
+}
+
+func (b *boolFlagVar) Set(value string) error {
+	if value == "true" {
+		b.count++
+	}
+	return nil
+}
+
+func (b *boolFlagVar) IsBoolFlag() bool {
+	return b.count < 4
+}
+
+func TestUserDefinedBool(t *testing.T) {
+	var flags FlagSet
+	flags.Init("test", ContinueOnError)
+	var b boolFlagVar
+	var err error
+	flags.Var(&b, "b", "usage")
+	if err = flags.Parse(true, []string{"-b", "-b", "-b", "-b=true", "-b=false", "-b", "barg", "-b"}); err != nil {
+		if b.count < 4 {
+			t.Error(err)
+		}
+	}
+
+	if b.count != 4 {
+		t.Errorf("want: %d; got: %d", 4, b.count)
+	}
+
+	if err == nil {
+		t.Error("expected error; got none")
+	}
+}
+
 func TestSetOutput(t *testing.T) {
 	var flags FlagSet
 	var buf bytes.Buffer
@@ -445,7 +539,7 @@ func TestChangingArgs(t *testing.T) {
 	defer func() { os.Args = oldArgs }()
 	os.Args = []string{"cmd", "--before", "subcmd", "--after", "args"}
 	before := Bool("before", false, "")
-	if err := CommandLine().Parse(false, os.Args[1:]); err != nil {
+	if err := CommandLine.Parse(false, os.Args[1:]); err != nil {
 		t.Fatal(err)
 	}
 	cmd := Arg(0)

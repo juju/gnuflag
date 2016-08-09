@@ -7,7 +7,7 @@ package gnuflag_test
 import (
 	"bytes"
 	"fmt"
-	. "launchpad.net/gnuflag"
+	. "github.com/juju/gnuflag"
 	"os"
 	"reflect"
 	"sort"

@@ -313,25 +313,25 @@ var parseTests = []struct {
 	args: []string{
 		"--=bar",
 	},
-	error: `empty flag in argument "--=bar"`,
+	error: `empty %v in argument "--=bar"`,
 }, {
 	about: "single-letter equals",
 	args: []string{
 		"-=bar",
 	},
-	error: `flag provided but not defined: -=`,
+	error: `%v provided but not defined: -=`,
 }, {
 	about: "empty flag #2",
 	args: []string{
 		"--=",
 	},
-	error: `empty flag in argument "--="`,
+	error: `empty %v in argument "--="`,
 }, {
 	about: "no equals",
 	args: []string{
 		"-=",
 	},
-	error: `flag provided but not defined: -=`,
+	error: `%v provided but not defined: -=`,
 }, {
 	args: []string{
 		"-a=true",
@@ -339,7 +339,7 @@ var parseTests = []struct {
 	vals: map[string]interface{}{
 		"a": true,
 	},
-	error: `invalid value "=true" for flag -a: strconv.ParseBool: parsing "=true": invalid syntax`,
+	error: `invalid value "=true" for %v -a: strconv.ParseBool: parsing "=true": invalid syntax`,
 }, {
 	intersperse: true,
 	args: []string{
@@ -349,7 +349,7 @@ var parseTests = []struct {
 	vals: map[string]interface{}{
 		"a": true,
 	},
-	error: "flag provided but not defined: -b",
+	error: "%v provided but not defined: -b",
 }, {
 	intersperse: true,
 	args: []string{
@@ -358,7 +358,7 @@ var parseTests = []struct {
 	vals: map[string]interface{}{
 		"a": "default",
 	},
-	error: "flag needs an argument: -a",
+	error: "%v needs an argument: -a",
 }, {
 	intersperse: true,
 	args: []string{
@@ -367,7 +367,7 @@ var parseTests = []struct {
 	vals: map[string]interface{}{
 		"a": 0,
 	},
-	error: `invalid value "b" for flag -a: strconv.ParseInt: parsing "b": invalid syntax`,
+	error: `invalid value "b" for %v -a: strconv.ParseInt: parsing "b": invalid syntax`,
 },
 }
 
@@ -400,10 +400,14 @@ func testParse(newFlagSet func() *FlagSet, t *testing.T) {
 		}
 		err := f.Parse(g.intersperse, g.args)
 		if g.error != "" {
+			expectedError := g.error
+			if strings.Contains(expectedError, "%v") {
+				expectedError = fmt.Sprintf(expectedError, f.FlagKnownAs)
+			}
 			if err == nil {
-				t.Errorf("expected error %q got nil", g.error)
-			} else if err.Error() != g.error {
-				t.Errorf("expected error %q got %q", g.error, err.Error())
+				t.Errorf("expected error %q got nil", expectedError)
+			} else if err.Error() != expectedError {
+				t.Errorf("expected error %q got %q", expectedError, err.Error())
 			}
 			continue
 		}
@@ -433,8 +437,23 @@ func TestParse(t *testing.T) {
 }
 
 func TestFlagSetParse(t *testing.T) {
+	// Flags are to be known as 'flag'
 	testParse(func() *FlagSet {
 		f := NewFlagSet("test", ContinueOnError)
+		f.SetOutput(nullWriter{})
+		return f
+	}, t)
+	// Flags are to be known as 'options', using alt constructor
+	testParse(func() *FlagSet {
+		f := NewFlagSetWithFlagKnownAs("test", ContinueOnError, "option")
+		//f.SetAKA("option")
+		f.SetOutput(nullWriter{})
+		return f
+	}, t)
+	// Flags are to be known as 'fluff', using a setter
+	testParse(func() *FlagSet {
+		f := NewFlagSet("test", ContinueOnError)
+		f.FlagKnownAs = "fluff"
 		f.SetOutput(nullWriter{})
 		return f
 	}, t)
@@ -574,6 +593,8 @@ func TestHelp(t *testing.T) {
 		helpCalled = false // reset for next test
 	}
 	// Help flag should work as expected.
+	itemName := "flag/option/item/anything"
+	fs.FlagKnownAs = itemName
 	err = fs.Parse(true, []string{"--help"})
 	if err == nil {
 		t.Fatal("error expected")
@@ -583,6 +604,11 @@ func TestHelp(t *testing.T) {
 	}
 	if !helpCalled {
 		t.Fatal("help was not called")
+	}
+	// check message
+	expectedErrMsg := fmt.Sprintf("%v: help requested", itemName)
+	if err.Error() != expectedErrMsg {
+		t.Fatal(fmt.Sprintf("expected error `%v`; got ", expectedErrMsg), err)
 	}
 	// If we define a help flag, that should override.
 	var help bool

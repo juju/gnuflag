@@ -446,7 +446,6 @@ func TestFlagSetParse(t *testing.T) {
 	// Flags are to be known as 'options', using alt constructor
 	testParse(func() *FlagSet {
 		f := NewFlagSetWithFlagKnownAs("test", ContinueOnError, "option")
-		//f.SetAKA("option")
 		f.SetOutput(nullWriter{})
 		return f
 	}, t)
